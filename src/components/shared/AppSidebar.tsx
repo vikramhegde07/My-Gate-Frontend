@@ -32,6 +32,11 @@ const navigation = [
         icon: Users,
         href: "/visitors",
     },
+    {
+        label: "Users",
+        icon: Users,
+        href: "/users",
+    },
 ];
 
 export default function AppSidebar({

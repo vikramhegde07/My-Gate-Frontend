@@ -5,6 +5,11 @@ import ProtectedRoute from './components/layouts/ProtectedRoute'
 import ProtectedLayout from './components/layouts/ProtectedLayout'
 import Register from './pages/Auth/Register'
 import Dashboard from './pages/Dashboard'
+import Properties from './pages/Property/Properties'
+import GatesPage from './pages/Gates/GatesPage'
+import UsersPage from './pages/User/UsersPage'
+import Visitorpage from './pages/Visitor/Visitorpage'
+import PublicVisitorPage from './pages/Public/PublicVisitorPage'
 
 function App() {
 
@@ -14,11 +19,17 @@ function App() {
         {/* Public Routes  */}
         <Route path='/auth/login' element={<Login />} />
         <Route path='/auth/register' element={<Register />} />
+        <Route path='/visitor/:propertyId' element={<PublicVisitorPage />} />
 
         {/* Private Routes  */}
         <Route element={<ProtectedRoute />} >
           <Route element={<ProtectedLayout />} >
             <Route path="/dashboard" element={<Dashboard />} />
+
+            <Route path="/properties" element={<Properties />} />
+            <Route path="/gates" element={<GatesPage />} />
+            <Route path="/users" element={<UsersPage />} />
+            <Route path="/visitors" element={<Visitorpage />} />
           </Route>
         </Route>
 
