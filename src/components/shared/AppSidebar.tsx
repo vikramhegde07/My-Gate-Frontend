@@ -49,13 +49,10 @@ export default function AppSidebar({
     const handleLogout = async () => {
         try {
             await logout();
-            navigate("/auth/login", {
-                replace: true,
-            });
-        } catch {
-            navigate("/auth/login", {
-                replace: true,
-            });
+        } catch (error: any) {
+            console.error("Logout execution failed, forcing reload:", error);
+            // Fallback only if the context state execution completely locks up
+            window.location.href = "/auth/login";
         }
     };
 
