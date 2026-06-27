@@ -5,7 +5,6 @@ import {
     useEffect,
     type ReactNode,
 } from "react";
-import { Outlet } from "react-router-dom";
 import { apiPrivate } from "@/lib/api";
 import { useAuth } from "./AuthContext";
 import type { Property, PropertyRole, UserPropertyMembership } from "@/interfaces/property";
@@ -105,10 +104,6 @@ export const PropertyProvider = ({
                 refreshMemberships,
             }}
         >
-            {/* 
-               Acts as a wrapper routing layer. 
-               This matches how it is layouted inside App.tsx 
-            */}
             {children}
         </PropertyContext.Provider>
     );

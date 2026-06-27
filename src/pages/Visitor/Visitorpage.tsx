@@ -1,486 +1,213 @@
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { Gate, HostUser, Property, Visitor } from '@/interfaces/visitor';
-import apiPrivate from '@/lib/api';
-import { useEffect, useState } from 'react'
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table"
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useEffect, useState } from "react";
+import { Users, ShieldCheck, CheckCircle2, LogOut, ClipboardList, Info } from "lucide-react";
 
-export default function Visitorpage() {
-    const [properties, setProperties] = useState<Property[]>([]);
-    const [selectedProperty, setSelectedProperty] = useState("");
+import apiPrivate from "@/lib/api";
+import { useProperty } from "@/context/PropertyContext";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { Gate, HostUser, Visitor } from "@/interfaces/visitor";
+import { VisitorFormModal } from "@/components/visitor/VisitorFormModal";
+import { VisitorFilters } from "@/components/visitor/VisitorFilters";
 
+export default function VisitorPage() {
+    const { currentProperty, currentRole } = useProperty();
     const [visitors, setVisitors] = useState<Visitor[]>([]);
     const [gates, setGates] = useState<Gate[]>([]);
     const [users, setUsers] = useState<HostUser[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const [open, setOpen] = useState(false);
-    const [submitting, setSubmitting] = useState(false);
-
-    const [formData, setFormData] = useState({
-        visitorName: "",
-        visitorPhone: "",
-        purpose: "",
-
-        gateId: "",
-        hostUserId: "",
-
-        vehicleNumber: "",
-        vehicleType: "",
-
-        remarks: "",
+    // Advanced Local State Filter Matrix
+    const [filters, setFilters] = useState({
+        search: "",
+        sortOrder: "desc",
+        gateId: "ALL",
+        hostUserId: "ALL"
     });
 
-    const fetchProperties = async () => {
-        const res = await apiPrivate.get("/properties");
+    const isStaffOrResident = currentRole === "RESIDENT" || currentRole === "STAFF";
+    const isSecurityForce = currentRole === "SECURITY";
 
-        setProperties(res.data.data);
-
-        if (res.data.data.length > 0) {
-            setSelectedProperty(res.data.data[0].id);
-        }
-    };
-
-    const fetchVisitors = async (propertyId: string) => {
-        const res = await apiPrivate.get(
-            `/properties/${propertyId}/visitors`
-        );
-
-        setVisitors(res.data.data);
-    };
-
-    const fetchGates = async (propertyId: string) => {
-        const res = await apiPrivate.get(
-            `/properties/${propertyId}/gates`
-        );
-
-        setGates(res.data.data);
-    };
-
-    const fetchUsers = async (propertyId: string) => {
-        const res = await apiPrivate.get(
-            `/properties/${propertyId}/users`
-        );
-
-        setUsers(res.data.data);
-    };
-
-    useEffect(() => {
-        fetchProperties();
-    }, []);
-
-    useEffect(() => {
-        if (!selectedProperty) return;
-
-        fetchVisitors(selectedProperty);
-        fetchGates(selectedProperty);
-        fetchUsers(selectedProperty);
-    }, [selectedProperty]);
-
-    const handleCreateVisitor = async () => {
+    const fetchWorkspaceLogs = async () => {
+        if (!currentProperty) return;
         try {
-            setSubmitting(true);
+            setLoading(true);
 
-            await apiPrivate.post(
-                `/properties/${selectedProperty}/visitors`,
-                formData
-            );
+            // Build scalable URL search query keys for backend attachment
+            const queryParams = new URLSearchParams();
+            if (filters.search) queryParams.append("search", filters.search);
+            if (filters.sortOrder) queryParams.append("sortOrder", filters.sortOrder);
+            if (filters.gateId !== "ALL") queryParams.append("gateId", filters.gateId);
+            if (filters.hostUserId !== "ALL") queryParams.append("hostUserId", filters.hostUserId);
 
-            await fetchVisitors(selectedProperty);
-
-            setOpen(false);
-
-            setFormData({
-                visitorName: "",
-                visitorPhone: "",
-                purpose: "",
-
-                gateId: "",
-                hostUserId: "",
-
-                vehicleNumber: "",
-                vehicleType: "",
-
-                remarks: "",
-            });
+            const res = await apiPrivate.get(`/properties/${currentProperty.id}/visitors?${queryParams.toString()}`);
+            setVisitors(res.data.data || []);
+        } catch (err) {
+            console.error("Failed synchronizing log infrastructure:", err);
         } finally {
-            setSubmitting(false);
+            setLoading(false);
         }
     };
 
-    const approveVisitor = async (
-        visitorId: string
-    ) => {
-        await apiPrivate.patch(
-            `/properties/${selectedProperty}/visitors/${visitorId}/approve`
-        );
+    useEffect(() => {
+        if (!currentProperty) return;
 
-        fetchVisitors(selectedProperty);
+        const fetchDependencies = async () => {
+            const [gatesRes, usersRes] = await Promise.all([
+                apiPrivate.get(`/properties/${currentProperty.id}/gates`),
+                apiPrivate.get(`/properties/${currentProperty.id}/users`)
+            ]);
+            setGates(gatesRes.data.data || []);
+            setUsers(usersRes.data.data || []);
+        };
+
+        fetchDependencies();
+    }, [currentProperty]);
+
+    useEffect(() => {
+        fetchWorkspaceLogs();
+    }, [currentProperty, filters]);
+
+    const handleCreateVisitor = async (formData: any) => {
+        if (!currentProperty) return;
+        await apiPrivate.post(`/properties/${currentProperty.id}/visitors`, formData);
+        await fetchWorkspaceLogs();
     };
 
-    const checkoutVisitor = async (
-        visitorId: string
-    ) => {
-        await apiPrivate.patch(
-            `/properties/${selectedProperty}/visitors/${visitorId}/checkout`
-        );
-
-        fetchVisitors(selectedProperty);
+    const handleApprove = async (id: string) => {
+        if (!currentProperty) return;
+        await apiPrivate.patch(`/properties/${currentProperty.id}/visitors/${id}/approve`);
+        await fetchWorkspaceLogs();
     };
+
+    const handleCheckout = async (id: string) => {
+        if (!currentProperty) return;
+        await apiPrivate.patch(`/properties/${currentProperty.id}/visitors/${id}/checkout`);
+        await fetchWorkspaceLogs();
+    };
+
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case "APPROVED":
+            case "CHECKED_IN":
+                return <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 font-medium text-[11px] uppercase tracking-wider">On-Premise</Badge>;
+            case "PENDING":
+                return <Badge variant="outline" className="text-amber-500 border-amber-500/30 font-medium text-[11px] uppercase tracking-wider animate-pulse">Awaiting Approval</Badge>;
+            default:
+                return <Badge variant="secondary" className="text-muted-foreground font-medium text-[11px] uppercase tracking-wider">Checked Out</Badge>;
+        }
+    };
+
     return (
-        <div>
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <h1 className="text-2xl font-bold">
-                    Visitors
-                </h1>
-
-                <div className="flex gap-2">
-                    <Select
-                        value={selectedProperty}
-                        onValueChange={setSelectedProperty}
-                    >
-                        <SelectTrigger className="w-[220px]">
-                            <SelectValue placeholder="Select Property" />
-                        </SelectTrigger>
-
-                        <SelectContent>
-                            {properties.map((property) => (
-                                <SelectItem
-                                    key={property.id}
-                                    value={property.id}
-                                >
-                                    {property.name}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    <Dialog open={open} onOpenChange={setOpen}>
-                        <DialogTrigger asChild>
-                            <Button>
-                                Add Visitor
-                            </Button>
-                        </DialogTrigger>
-
-                        <DialogContent className="max-h-[90vh] overflow-y-auto">
-                            <DialogHeader>
-                                <DialogTitle>
-                                    Add Visitor
-                                </DialogTitle>
-                            </DialogHeader>
-
-                            <div className="space-y-4">
-                                {/* Visitor Name */}
-
-                                <div>
-                                    <Label>Visitor Name</Label>
-
-                                    <Input
-                                        value={formData.visitorName}
-                                        onChange={(e) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                visitorName: e.target.value,
-                                            }))
-                                        }
-                                        placeholder="Enter visitor name"
-                                    />
-                                </div>
-
-                                {/* Visitor Phone */}
-
-                                <div>
-                                    <Label>Visitor Phone</Label>
-
-                                    <Input
-                                        value={formData.visitorPhone}
-                                        onChange={(e) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                visitorPhone: e.target.value,
-                                            }))
-                                        }
-                                        placeholder="Enter phone number"
-                                    />
-                                </div>
-
-                                {/* Purpose */}
-
-                                <div>
-                                    <Label>Purpose</Label>
-
-                                    <Input
-                                        value={formData.purpose}
-                                        onChange={(e) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                purpose: e.target.value,
-                                            }))
-                                        }
-                                        placeholder="Meeting / Delivery / Maintenance"
-                                    />
-                                </div>
-
-                                {/* Gate */}
-
-                                <div>
-                                    <Label>Gate</Label>
-
-                                    <Select
-                                        value={formData.gateId}
-                                        onValueChange={(value) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                gateId: value,
-                                            }))
-                                        }
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select Gate" />
-                                        </SelectTrigger>
-
-                                        <SelectContent>
-                                            {gates.map((gate) => (
-                                                <SelectItem
-                                                    key={gate.id}
-                                                    value={gate.id}
-                                                >
-                                                    {gate.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                {/* Host User */}
-
-                                <div>
-                                    <Label>Host User</Label>
-
-                                    <Select
-                                        value={formData.hostUserId}
-                                        onValueChange={(value) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                hostUserId: value,
-                                            }))
-                                        }
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select Host" />
-                                        </SelectTrigger>
-
-                                        <SelectContent>
-                                            {users.map((user) => (
-                                                <SelectItem
-                                                    key={user.user.id}
-                                                    value={user.user.id}
-                                                >
-                                                    {user.user.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                {/* Vehicle Number */}
-
-                                <div>
-                                    <Label>Vehicle Number</Label>
-
-                                    <Input
-                                        value={formData.vehicleNumber}
-                                        onChange={(e) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                vehicleNumber: e.target.value,
-                                            }))
-                                        }
-                                        placeholder="KA01AB1234"
-                                    />
-                                </div>
-
-                                {/* Vehicle Type */}
-
-                                <div>
-                                    <Label>Vehicle Type</Label>
-
-                                    <Select
-                                        value={formData.vehicleType}
-                                        onValueChange={(value) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                vehicleType: value,
-                                            }))
-                                        }
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select Vehicle Type" />
-                                        </SelectTrigger>
-
-                                        <SelectContent>
-                                            <SelectItem value="BIKE">
-                                                Bike
-                                            </SelectItem>
-
-                                            <SelectItem value="CAR">
-                                                Car
-                                            </SelectItem>
-
-                                            <SelectItem value="AUTO">
-                                                Auto
-                                            </SelectItem>
-
-                                            <SelectItem value="TRUCK">
-                                                Truck
-                                            </SelectItem>
-
-                                            <SelectItem value="OTHER">
-                                                Other
-                                            </SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-
-                                {/* Remarks */}
-
-                                <div>
-                                    <Label>Remarks</Label>
-
-                                    <Input
-                                        value={formData.remarks}
-                                        onChange={(e) =>
-                                            setFormData((prev) => ({
-                                                ...prev,
-                                                remarks: e.target.value,
-                                            }))
-                                        }
-                                        placeholder="Optional remarks"
-                                    />
-                                </div>
-
-                                {/* Submit */}
-
-                                <Button
-                                    className="w-full"
-                                    disabled={submitting}
-                                    onClick={handleCreateVisitor}
-                                >
-                                    {submitting
-                                        ? "Creating..."
-                                        : "Add Visitor"}
-                                </Button>
-                            </div>
-                        </DialogContent>
-                    </Dialog>
+        <div className="space-y-6">
+            {/* Upper Context Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/60 pb-5">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+                        <Users className="h-6 w-6 text-primary" />
+                        <span>Visitor Records</span>
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                        {isStaffOrResident ? "Pre-register incoming guests and check pass logs bound to your unit" : `Operational flow ledger tracking checkpoint streams for ${currentProperty?.name}`}
+                    </p>
                 </div>
+
+                {currentProperty && (
+                    <VisitorFormModal role={currentRole} gates={gates} users={users} onSubmit={handleCreateVisitor} />
+                )}
             </div>
 
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Visitor</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Gate</TableHead>
-                        <TableHead>Host</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Check In</TableHead>
-                        <TableHead>Check Out</TableHead>
-                        <TableHead>Actions</TableHead>
-                    </TableRow>
-                </TableHeader>
+            {/* Live Filter Block Desk */}
+            <VisitorFilters isStaffOrResident={isStaffOrResident} gates={gates} users={users} filters={filters} setFilters={setFilters} />
 
-                <TableBody>
-                    {visitors.map((visitor) => (
-                        <TableRow key={visitor.id}>
-                            <TableCell>
-                                {new Date(
-                                    visitor.createdAt
-                                ).toLocaleDateString()}
-                            </TableCell>
-
-                            <TableCell>
-                                {visitor.visitorName}
-                            </TableCell>
-
-                            <TableCell>
-                                {visitor.visitorPhone}
-                            </TableCell>
-
-                            <TableCell>
-                                {visitor.gate?.name ?? "-"}
-                            </TableCell>
-
-                            <TableCell>
-                                {visitor.hostUser?.name ?? "-"}
-                            </TableCell>
-
-                            <TableCell>
-                                {visitor.status}
-                            </TableCell>
-
-                            <TableCell>
-                                {visitor.checkInTime
-                                    ? new Date(
-                                        visitor.checkInTime
-                                    ).toLocaleString()
-                                    : "-"}
-                            </TableCell>
-
-                            <TableCell>
-                                {visitor.checkOutTime
-                                    ? new Date(
-                                        visitor.checkOutTime
-                                    ).toLocaleString()
-                                    : "-"}
-                            </TableCell>
-
-                            <TableCell>
-                                <div className="flex gap-2">
-                                    {visitor.status ===
-                                        "PENDING" && (
-                                            <Button
-                                                size="sm"
-                                                onClick={() =>
-                                                    approveVisitor(
-                                                        visitor.id
-                                                    )
-                                                }
-                                            >
-                                                Approve
-                                            </Button>
+            {/* Logs Table Output Canvas */}
+            {loading ? (
+                <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-2">
+                    <span className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+                    </span>
+                    <p className="text-xs font-medium animate-pulse mt-1">Interrogating encrypted guest logs...</p>
+                </div>
+            ) : visitors.length === 0 ? (
+                <div className="border border-dashed border-border rounded-xl p-12 text-center max-w-md mx-auto space-y-3">
+                    <ClipboardList className="h-10 w-10 text-muted-foreground mx-auto stroke-[1.5]" />
+                    <h3 className="font-bold text-lg text-foreground">Operational Slate Empty</h3>
+                    <p className="text-sm text-muted-foreground">
+                        No real-time tracking streams or historical guest indexes found matching the active filters.
+                    </p>
+                </div>
+            ) : (
+                <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                    <Table>
+                        <TableHeader className="bg-muted/40">
+                            <TableRow>
+                                <TableHead className="w-[110px]">Timestamp</TableHead>
+                                <TableHead>Visitor Profile</TableHead>
+                                <TableHead>Terminal Gate</TableHead>
+                                <TableHead>Host Destination</TableHead>
+                                <TableHead>Vehicle Tag</TableHead>
+                                <TableHead>Security State</TableHead>
+                                <TableHead className="text-right">Execution Controls</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {visitors.map((visitor) => (
+                                <TableRow key={visitor.id} className="hover:bg-muted/20 transition-colors">
+                                    <TableCell className="text-xs font-medium text-muted-foreground">
+                                        {new Date(visitor.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                    </TableCell>
+                                    <TableCell>
+                                        <div className="font-semibold text-sm text-foreground">{visitor.visitorName}</div>
+                                        <div className="text-xs text-muted-foreground font-mono">{visitor.visitorPhone}</div>
+                                    </TableCell>
+                                    <TableCell className="text-xs font-medium text-foreground">
+                                        {visitor.gate?.name || <span className="text-muted-foreground">-</span>}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-foreground">
+                                        {visitor.hostUser?.name || <span className="text-muted-foreground">-</span>}
+                                    </TableCell>
+                                    <TableCell className="text-xs font-mono text-muted-foreground">
+                                        {visitor.vehicleNumber ? (
+                                            <span className="bg-muted/80 px-1.5 py-0.5 rounded border border-border text-[11px] text-foreground font-semibold">
+                                                {visitor.vehicleNumber}
+                                            </span>
+                                        ) : "-"}
+                                    </TableCell>
+                                    <TableCell>{getStatusBadge(visitor.status)}</TableCell>
+                                    <TableCell className="text-right">
+                                        {isSecurityForce ? (
+                                            <div className="flex justify-end gap-2">
+                                                {visitor.status === "PENDING" && (
+                                                    <Button size="sm" className="h-7 px-2.5 text-xs font-semibold gap-1" onClick={() => handleApprove(visitor.id)}>
+                                                        <ShieldCheck className="h-3.5 w-3.5" />
+                                                        <span>Approve</span>
+                                                    </Button>
+                                                )}
+                                                {visitor.status === "CHECKED_IN" && (
+                                                    <Button size="sm" variant="secondary" className="h-7 px-2.5 text-xs font-semibold gap-1 border border-border" onClick={() => handleCheckout(visitor.id)}>
+                                                        <LogOut className="h-3.5 w-3.5 text-destructive" />
+                                                        <span>Checkout</span>
+                                                    </Button>
+                                                )}
+                                                {visitor.status !== "PENDING" && visitor.status !== "CHECKED_IN" && (
+                                                    <span className="text-xs text-muted-foreground flex items-center justify-end gap-1 font-medium">
+                                                        <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground/60" /> Complete
+                                                    </span>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-xs text-muted-foreground/80 italic flex items-center justify-end gap-1">
+                                                <Info className="h-3 w-3" /> Protected
+                                            </span>
                                         )}
-
-                                    {visitor.status ===
-                                        "CHECKED_IN" && (
-                                            <Button
-                                                size="sm"
-                                                variant="secondary"
-                                                onClick={() =>
-                                                    checkoutVisitor(
-                                                        visitor.id
-                                                    )
-                                                }
-                                            >
-                                                Checkout
-                                            </Button>
-                                        )}
-                                </div>
-                            </TableCell>
-                        </TableRow>
-                    ))}
-                </TableBody>
-            </Table>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            )}
         </div>
-    )
+    );
 }
